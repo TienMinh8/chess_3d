@@ -56,8 +56,14 @@ export default function App() {
   const [gameOverModal, setGameOverModal] = useState({
     visible: false,
     type: 'none',
-    winner: ''
+    winner: '',
+    winnerColor: '',
+    isPlayerWin: false,
+    isPlayerLoss: false,
+    isTwoPlayer: false,
+    reason: ''
   });
+  const [minimizedResultModal, setMinimizedResultModal] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -69,8 +75,13 @@ export default function App() {
         setCapturedWhite(state.capturedWhite);
         setCapturedBlack(state.capturedBlack);
       },
-      onGameOver: (type, winner) => {
-        setGameOverModal({ visible: true, type, winner });
+      onGameOver: (result) => {
+        if (typeof result === 'string') {
+          setGameOverModal({ visible: true, type: result, winner: arguments[1] || '' });
+        } else {
+          setGameOverModal({ visible: true, ...result });
+        }
+        setMinimizedResultModal(false);
       }
     });
 
@@ -142,7 +153,10 @@ export default function App() {
 
   const handleOpenHomeMenu = () => {
     soundManager.playMenuClick();
+    setGameOverModal({ visible: false, type: 'none', winner: '' });
+    setMinimizedResultModal(false);
     if (sceneRef.current) {
+      sceneRef.current.clearEndGameEffects();
       sceneRef.current.setHomeMenuMode(true);
     }
     setIsHomeMenu(true);
@@ -169,6 +183,8 @@ export default function App() {
   const handleNewGame = () => {
     soundManager.playMenuClick();
     setGameOverModal({ visible: false, type: 'none', winner: '' });
+    setMinimizedResultModal(false);
+    sceneRef.current?.clearEndGameEffects();
     sceneRef.current?.resetGame();
   };
 
@@ -923,43 +939,91 @@ export default function App() {
         </div>
       )}
 
-      {/* ================= CHECKMATE VICTORY MODAL ================= */}
+      {/* ================= RESULT MODAL (VICTORY / DEFEAT / DRAW) ================= */}
       <div
         id="checkmate-overlay"
-        className={gameOverModal.visible ? 'visible' : ''}
+        className={`${gameOverModal.visible && !minimizedResultModal ? 'visible' : ''} ${gameOverModal.isPlayerLoss ? 'theme-defeat' : gameOverModal.type === 'stalemate' ? 'theme-draw' : 'theme-victory'}`}
       >
         <div className="checkmate-banner">
-          <div className="checkmate-crown">
-            <Crown size={48} color="#d4ad37" />
+          {/* Header Crest */}
+          <div className="checkmate-crest-wrap">
+            {gameOverModal.isPlayerLoss ? (
+              <Shield size={38} className="result-crest defeat" />
+            ) : gameOverModal.type === 'stalemate' ? (
+              <Swords size={38} className="result-crest draw" />
+            ) : (
+              <Crown size={40} className="result-crest victory" />
+            )}
           </div>
+
+          {/* Title as per specification */}
           <div className="checkmate-title">
-            {gameOverModal.type === 'checkmate' ? 'CHIẾU BÍ' : 'HÒA CỜ'}
+            {gameOverModal.isPlayerLoss
+              ? 'TRẬN CHIẾN KẾT THÚC'
+              : gameOverModal.type === 'stalemate'
+              ? 'HÒA CỜ'
+              : 'CHIẾN THẮNG'}
           </div>
+
           <div className="checkmate-rule" />
+
+          {/* Contextual Subtitle */}
           <div className="checkmate-subtitle">
-            {gameOverModal.type === 'checkmate'
-              ? `Phe ${gameOverModal.winner === 'White' ? 'Trắng' : 'Đen'} Đại Thắng Trên Tế Đàn Thánh Đường!`
-              : 'Trận chiến kết thúc với kết quả hòa danh dự.'}
+            {gameOverModal.isPlayerLoss
+              ? (gameOverModal.reason === 'checkmate'
+                  ? 'Quân đoàn của bạn đã bị chiếu hết.'
+                  : 'Quân đoàn của bạn đã thất thủ trước đối thủ.')
+              : gameOverModal.type === 'stalemate'
+              ? 'Trận chiến kết thúc với kết quả hòa danh dự.'
+              : gameOverModal.isTwoPlayer
+              ? `Phe ${gameOverModal.winner === 'White' ? 'Trắng' : 'Đen'} đã chiếu hết đối thủ.`
+              : 'Đối thủ đã bị chiếu hết.'}
           </div>
+
+          {/* Action Buttons: Primary & Secondary as specified */}
           <div className="checkmate-actions">
-            <button className="checkmate-btn" onClick={handleNewGame}>
-              Đấu Lại
-            </button>
             <button
-              className="checkmate-btn secondary"
-              onClick={() => setGameOverModal((m) => ({ ...m, visible: false }))}
+              type="button"
+              className="result-btn primary"
+              onClick={handleNewGame}
             >
-              Quan Sát Bàn Cờ
+              <RotateCcw size={15} />
+              <span>{gameOverModal.isPlayerLoss ? 'THỬ LẠI' : 'CHƠI LẠI'}</span>
             </button>
+
             <button
-              className="checkmate-btn secondary"
+              type="button"
+              className="result-btn secondary"
               onClick={handleOpenHomeMenu}
             >
-              Về Trang Chủ
+              <Home size={15} />
+              <span>VỀ HOME</span>
+            </button>
+
+            <button
+              type="button"
+              className="result-btn eye-observe"
+              onClick={() => setMinimizedResultModal(true)}
+              title="Tạm ẩn để chiêm ngưỡng bàn cờ"
+            >
+              <Eye size={15} />
+              <span>QUAN SÁT</span>
             </button>
           </div>
         </div>
       </div>
+
+      {/* Floating Restore Result Pill when minimized to observe board */}
+      {gameOverModal.visible && minimizedResultModal && (
+        <button
+          type="button"
+          className="result-minimized-pill"
+          onClick={() => setMinimizedResultModal(false)}
+        >
+          <Crown size={15} />
+          <span>Xem Bảng Kết Quả</span>
+        </button>
+      )}
     </div>
   );
 }

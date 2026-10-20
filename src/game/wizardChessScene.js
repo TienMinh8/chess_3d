@@ -65,6 +65,18 @@ export class WizardChessScene {
     this.cameraShake = 0;
     this.flameUniforms = [];
 
+    // End Game Cinematic Effects State
+    this.victoryEffectActive = false;
+    this.defeatEffectActive = false;
+    this.victoryBacklight = null;
+    this.victoryRimLight = null;
+    this.victorySigil = null;
+    this.victoryParticles = [];
+    this.shatteredFragments = [];
+    this.dustParticles = [];
+    this.defeatPiecesShaking = [];
+    this.originalLighting = { ambient: 0.9, key: 2.2 };
+
     this.initThree();
     this.initShadersAndEnvironment();
     this.initBoardVisuals();
@@ -109,8 +121,8 @@ export class WizardChessScene {
     this.controls.target.set(0, 0.85, -0.15);
 
     // Lights
-    const ambient = new THREE.AmbientLight(0x3a4b68, 0.9);
-    this.scene.add(ambient);
+    this.ambientLight = new THREE.AmbientLight(0x3a4b68, 0.9);
+    this.scene.add(this.ambientLight);
 
     // Altar main spotlight
     this.keyLight = new THREE.DirectionalLight(0xfff1d6, 2.2);
@@ -125,11 +137,13 @@ export class WizardChessScene {
     this.scene.add(this.keyLight);
 
     // Cathedral aisle lanterns
+    this.aisleLanterns = [];
     for (const z of [-8.8, 8.2]) {
       for (const side of [-1, 1]) {
         const lantern = new THREE.PointLight(0x90beff, 3.5, 16, 1.3);
         lantern.position.set(side * 5.3, 4.1, z);
         this.scene.add(lantern);
+        this.aisleLanterns.push(lantern);
       }
     }
 
@@ -584,6 +598,7 @@ export class WizardChessScene {
   setHomeMenuMode(enabled) {
     this.isHomeMode = enabled;
     this.controls.autoRotate = false;
+    this.clearEndGameEffects();
     if (enabled) {
       this.clearSelection();
       this.setCameraView('home');
@@ -819,15 +834,58 @@ export class WizardChessScene {
 
     if (checkmated) {
       this.gameOver = true;
-      soundManager.playCheckmateVictory();
-      const winner = this.currentTurn === 'w' ? 'Black' : 'White';
+      const winnerColor = this.currentTurn === 'w' ? 'b' : 'w';
+      const loserColor = this.currentTurn;
+      const winner = winnerColor === 'w' ? 'White' : 'Black';
+
+      const isAI = this.gameMode === 'ai';
+      const isPlayerWin = isAI ? (this.playerColor === winnerColor) : false;
+      const isPlayerLoss = isAI ? (this.playerColor === loserColor) : false;
+
+      if (isAI) {
+        if (isPlayerWin) {
+          this.triggerVictoryEffect(this.playerColor);
+          soundManager.playVictoryFanfare();
+        } else {
+          this.triggerDefeatEffect(this.playerColor);
+          soundManager.playDefeatCrumble();
+        }
+      } else {
+        // Local 2-Player mode: winning side receives glorious victory aura, losing side crumbles
+        this.triggerVictoryEffect(winnerColor);
+        this.triggerDefeatEffect(loserColor);
+        soundManager.playVictoryFanfare();
+      }
+
       if (this.callbacks.onGameOver) {
-        this.callbacks.onGameOver('checkmate', winner);
+        setTimeout(() => {
+          this.callbacks.onGameOver({
+            type: 'checkmate',
+            winner,
+            winnerColor,
+            loserColor,
+            isPlayerWin,
+            isPlayerLoss,
+            isTwoPlayer: !isAI,
+            reason: 'checkmate'
+          });
+        }, 1200);
       }
     } else if (stalemated) {
       this.gameOver = true;
+      soundManager.playFloorBounce();
       if (this.callbacks.onGameOver) {
-        this.callbacks.onGameOver('stalemate', 'Draw');
+        setTimeout(() => {
+          this.callbacks.onGameOver({
+            type: 'stalemate',
+            winner: 'Draw',
+            winnerColor: null,
+            isPlayerWin: false,
+            isPlayerLoss: false,
+            isTwoPlayer: this.gameMode !== 'ai',
+            reason: 'stalemate'
+          });
+        }, 800);
       }
     }
 
@@ -1124,6 +1182,371 @@ export class WizardChessScene {
     });
   }
 
+  createRuneSigilTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+
+    ctx.clearRect(0, 0, 512, 512);
+    const cx = 256;
+    const cy = 256;
+
+    // Outer ring
+    ctx.strokeStyle = '#ffd76a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 240, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Dotted celestial orbit
+    ctx.setLineDash([6, 10]);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 224, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Middle circle with 24 radial rune ticks
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 185, 0, Math.PI * 2);
+    ctx.stroke();
+
+    for (let i = 0; i < 24; i++) {
+      const angle = (i * Math.PI * 2) / 24;
+      const x1 = cx + Math.cos(angle) * 185;
+      const y1 = cy + Math.sin(angle) * 185;
+      const len = i % 3 === 0 ? 30 : 16;
+      const x2 = cx + Math.cos(angle) * (185 + len);
+      const y2 = cy + Math.sin(angle) * (185 + len);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+
+    // Double inner octagram / 8-point faceted compass star
+    ctx.lineWidth = 2.5;
+    for (let s = 0; s < 2; s++) {
+      const offset = (s * Math.PI) / 4;
+      ctx.beginPath();
+      for (let i = 0; i <= 4; i++) {
+        const a = offset + (i * Math.PI * 2) / 4;
+        const x = cx + Math.cos(a) * 140;
+        const y = cy + Math.sin(a) * 140;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    // Inner core circle and crystal star
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 75, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff0ba';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+    ctx.fill();
+
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  triggerVictoryEffect(winningColor) {
+    this.clearEndGameEffects();
+    this.victoryEffectActive = true;
+
+    const sign = winningColor === 'w' ? -1 : 1;
+
+    // 1. Gently dim surrounding environment lights to accentuate golden radiance
+    if (this.ambientLight) this.ambientLight.intensity = 0.45;
+    if (this.keyLight) this.keyLight.intensity = 1.1;
+
+    // 2. Powerful golden backlight behind the victorious army producing dramatic rim lighting
+    this.victoryBacklight = new THREE.SpotLight(0xffdf78, 0.2, 18, Math.PI / 3.0, 0.45, 1.2);
+    this.victoryBacklight.position.set(0, 3.5, sign * 3.6);
+    this.victoryBacklight.target.position.set(0, ALTAR_HEIGHT + 0.35, sign * 1.1);
+    this.scene.add(this.victoryBacklight);
+    this.scene.add(this.victoryBacklight.target);
+
+    // Warm golden rim-light filling the army silhouettes
+    this.victoryRimLight = new THREE.PointLight(0xffea9f, 0.5, 7.5, 1.2);
+    this.victoryRimLight.position.set(0, ALTAR_HEIGHT + 0.65, sign * 2.1);
+    this.scene.add(this.victoryRimLight);
+
+    // 3. Circular Magical Rune Sigil beneath the victorious army
+    const sigilTex = this.createRuneSigilTexture();
+    const sigilGeo = new THREE.PlaneGeometry(2.4, 2.4);
+    sigilGeo.rotateX(-Math.PI / 2);
+    const sigilMat = new THREE.MeshBasicMaterial({
+      map: sigilTex,
+      transparent: true,
+      opacity: 0.1,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    this.victorySigil = new THREE.Mesh(sigilGeo, sigilMat);
+    this.victorySigil.position.set(0, ALTAR_HEIGHT + 0.005, sign * 0.95);
+    this.scene.add(this.victorySigil);
+
+    // 4. Subtle Rising Golden Particles around the pieces
+    const pGeo = new THREE.OctahedronGeometry(0.024, 0);
+    const pMat = new THREE.MeshBasicMaterial({
+      color: 0xffe277,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending
+    });
+
+    this.victoryParticles = [];
+    for (let i = 0; i < 45; i++) {
+      const mesh = new THREE.Mesh(pGeo, pMat.clone());
+      const x = (Math.random() - 0.5) * 2.2;
+      const z = sign * 0.95 + (Math.random() - 0.5) * 1.8;
+      const y = ALTAR_HEIGHT + Math.random() * 1.6;
+      mesh.position.set(x, y, z);
+      this.scene.add(mesh);
+
+      this.victoryParticles.push({
+        mesh,
+        baseX: x,
+        baseZ: z,
+        velY: 0.22 + Math.random() * 0.38,
+        swaySpeed: 1.8 + Math.random() * 2.2,
+        swayAmp: 0.012 + Math.random() * 0.018,
+        seed: Math.random() * 50,
+        minY: ALTAR_HEIGHT + 0.02,
+        maxY: ALTAR_HEIGHT + 2.2
+      });
+    }
+
+    // 5. Stabilize camera framing on the victorious army
+    const camZ = sign * 2.45;
+    const targetLookZ = sign * 0.35;
+    this.activeCamTween = {
+      startPos: this.camera.position.clone(),
+      endPos: new THREE.Vector3(0, 1.85, camZ),
+      startTarget: this.controls.target.clone(),
+      endTarget: new THREE.Vector3(0, 0.92, targetLookZ),
+      elapsed: 0,
+      duration: 1.2
+    };
+  }
+
+  triggerDefeatEffect(losingColor) {
+    this.defeatEffectActive = true;
+
+    // 1. Dim surrounding environment and cast somber shadows
+    if (this.ambientLight) this.ambientLight.intensity = 0.35;
+    if (this.keyLight) this.keyLight.intensity = 0.85;
+
+    // 2. Identify all surviving pieces of losingColor
+    const piecesToCrumble = [];
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const entity = this.pieceEntities[r][c];
+        if (entity && entity.color === losingColor && entity.mesh && entity.mesh.visible) {
+          piecesToCrumble.push(entity);
+        }
+      }
+    }
+
+    // 3. Schedule micro-tremor followed by fragmentation
+    const startTime = this.clock.getElapsedTime();
+    this.defeatPiecesShaking = piecesToCrumble.map((entity) => ({
+      entity,
+      origX: entity.mesh.position.x,
+      origZ: entity.mesh.position.z,
+      startTime
+    }));
+
+    // After 0.35s tremor, crumble pieces into fragments
+    setTimeout(() => {
+      this.defeatPiecesShaking = [];
+      for (const entity of piecesToCrumble) {
+        if (!entity.mesh) continue;
+        entity.mesh.visible = false;
+        this.spawnPieceCrumbleFragments(entity);
+      }
+    }, 350);
+
+    // Camera gently stabilizes
+    const sign = losingColor === 'w' ? -1 : 1;
+    this.activeCamTween = {
+      startPos: this.camera.position.clone(),
+      endPos: new THREE.Vector3(0, 2.05, sign * 2.5),
+      startTarget: this.controls.target.clone(),
+      endTarget: new THREE.Vector3(0, 0.85, sign * 0.4),
+      elapsed: 0,
+      duration: 1.2
+    };
+  }
+
+  spawnPieceCrumbleFragments(entity) {
+    const isWhite = entity.color === 'w';
+    const basePos = entity.mesh.position;
+
+    // Materials: antique ivory limestone for white, dark chipped iron/obsidian for black
+    const mat = isWhite
+      ? new THREE.MeshStandardMaterial({
+          color: 0xd4cdc0,
+          roughness: 0.85,
+          metalness: 0.05
+        })
+      : new THREE.MeshStandardMaterial({
+          color: 0x1c1e24,
+          roughness: 0.78,
+          metalness: 0.32
+        });
+
+    const fragmentCount = 12 + Math.floor(Math.random() * 5); // 12 - 16 realistic 3D fragments
+    const shardGeos = [
+      new THREE.ConeGeometry(0.045, 0.08, 4),
+      new THREE.BoxGeometry(0.05, 0.045, 0.05),
+      new THREE.TetrahedronGeometry(0.042),
+      new THREE.BoxGeometry(0.035, 0.065, 0.035)
+    ];
+
+    for (let i = 0; i < fragmentCount; i++) {
+      const geo = shardGeos[i % shardGeos.length];
+      const mesh = new THREE.Mesh(geo, mat);
+
+      const spawnY = ALTAR_HEIGHT + 0.04 + (i / fragmentCount) * 0.28;
+      const spawnX = basePos.x + (Math.random() - 0.5) * 0.08;
+      const spawnZ = basePos.z + (Math.random() - 0.5) * 0.08;
+      mesh.position.set(spawnX, spawnY, spawnZ);
+
+      mesh.rotation.set(
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2
+      );
+
+      this.scene.add(mesh);
+
+      // Natural fragmentation physics
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.35 + Math.random() * 0.85;
+      this.shatteredFragments.push({
+        mesh,
+        vel: new THREE.Vector3(
+          Math.cos(angle) * speed,
+          0.6 + Math.random() * 1.4, // Initial upward hop
+          Math.sin(angle) * speed
+        ),
+        rotVel: new THREE.Vector3(
+          (Math.random() - 0.5) * 12,
+          (Math.random() - 0.5) * 12,
+          (Math.random() - 0.5) * 12
+        ),
+        bounces: 0,
+        isResting: false
+      });
+    }
+
+    // 4 soft stone dust puffs
+    const dustGeo = new THREE.SphereGeometry(0.045, 8, 8);
+    const dustMat = new THREE.MeshBasicMaterial({
+      color: isWhite ? 0xb5ad9e : 0x5a554c,
+      transparent: true,
+      opacity: 0.4
+    });
+
+    for (let d = 0; d < 4; d++) {
+      const dustMesh = new THREE.Mesh(dustGeo, dustMat.clone());
+      dustMesh.position.set(
+        basePos.x + (Math.random() - 0.5) * 0.1,
+        ALTAR_HEIGHT + 0.05,
+        basePos.z + (Math.random() - 0.5) * 0.1
+      );
+      this.scene.add(dustMesh);
+      this.dustParticles.push({
+        mesh: dustMesh,
+        vel: new THREE.Vector3(
+          (Math.random() - 0.5) * 0.2,
+          0.12 + Math.random() * 0.15,
+          (Math.random() - 0.5) * 0.2
+        ),
+        life: 1.2,
+        maxLife: 1.2
+      });
+    }
+  }
+
+  clearEndGameEffects() {
+    this.victoryEffectActive = false;
+    this.defeatEffectActive = false;
+    this.defeatPiecesShaking = [];
+
+    // Restore lights
+    if (this.ambientLight) this.ambientLight.intensity = this.originalLighting.ambient;
+    if (this.keyLight) this.keyLight.intensity = this.originalLighting.key;
+
+    // Remove victory backlight & rimlight
+    if (this.victoryBacklight) {
+      if (this.victoryBacklight.target) this.scene.remove(this.victoryBacklight.target);
+      this.scene.remove(this.victoryBacklight);
+      this.victoryBacklight = null;
+    }
+    if (this.victoryRimLight) {
+      this.scene.remove(this.victoryRimLight);
+      this.victoryRimLight = null;
+    }
+
+    // Remove victory sigil
+    if (this.victorySigil) {
+      if (this.victorySigil.material?.map) this.victorySigil.material.map.dispose();
+      this.victorySigil.material?.dispose();
+      this.victorySigil.geometry?.dispose();
+      this.scene.remove(this.victorySigil);
+      this.victorySigil = null;
+    }
+
+    // Remove victory particles
+    for (const p of this.victoryParticles) {
+      if (p.mesh) {
+        p.mesh.geometry?.dispose();
+        p.mesh.material?.dispose();
+        this.scene.remove(p.mesh);
+      }
+    }
+    this.victoryParticles = [];
+
+    // Remove shattered fragments
+    for (const f of this.shatteredFragments) {
+      if (f.mesh) {
+        f.mesh.geometry?.dispose();
+        f.mesh.material?.dispose();
+        this.scene.remove(f.mesh);
+      }
+    }
+    this.shatteredFragments = [];
+
+    // Remove dust particles
+    for (const d of this.dustParticles) {
+      if (d.mesh) {
+        d.mesh.geometry?.dispose();
+        d.mesh.material?.dispose();
+        this.scene.remove(d.mesh);
+      }
+    }
+    this.dustParticles = [];
+
+    // Restore all piece mesh visibilities
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const entity = this.pieceEntities[r][c];
+        if (entity && entity.mesh) {
+          entity.mesh.visible = true;
+        }
+      }
+    }
+  }
+
   setCameraView(type) {
     let targetPos, targetLookAt;
     const isBlack = this.playerColor === 'b';
@@ -1183,6 +1606,7 @@ export class WizardChessScene {
   }
 
   resetGame() {
+    this.clearEndGameEffects();
     this.board = createInitialBoard();
     this.currentTurn = 'w';
     this.selectedSquare = null;
@@ -1347,6 +1771,93 @@ export class WizardChessScene {
         }
       }
 
+      // Victory effect active updates
+      if (this.victoryEffectActive) {
+        if (this.victoryBacklight) {
+          if (this.victoryBacklight.intensity < 4.2) {
+            this.victoryBacklight.intensity = THREE.MathUtils.lerp(this.victoryBacklight.intensity, 4.5, delta * 2.2);
+          } else {
+            this.victoryBacklight.intensity = 4.2 + Math.sin(elapsed * 2.5) * 0.45;
+          }
+        }
+        if (this.victoryRimLight) {
+          if (this.victoryRimLight.intensity < 2.5) {
+            this.victoryRimLight.intensity = THREE.MathUtils.lerp(this.victoryRimLight.intensity, 2.8, delta * 2.5);
+          }
+        }
+        if (this.victorySigil) {
+          this.victorySigil.rotation.z += 0.005;
+          if (this.victorySigil.material && this.victorySigil.material.opacity < 0.85) {
+            this.victorySigil.material.opacity = Math.min(0.85, this.victorySigil.material.opacity + delta * 0.65);
+          }
+        }
+        for (const p of this.victoryParticles) {
+          p.mesh.position.y += p.velY * delta;
+          const sway = Math.sin(elapsed * p.swaySpeed + p.seed) * p.swayAmp;
+          p.mesh.position.x = p.baseX + sway;
+          p.mesh.position.z = p.baseZ + Math.cos(elapsed * p.swaySpeed + p.seed) * p.swayAmp;
+          p.mesh.rotation.y += 1.5 * delta;
+          p.mesh.rotation.x += 1.0 * delta;
+
+          if (p.mesh.position.y > p.maxY) {
+            p.mesh.position.y = p.minY;
+          }
+        }
+      }
+
+      // Defeat shudder phase
+      if (this.defeatPiecesShaking && this.defeatPiecesShaking.length > 0) {
+        for (const s of this.defeatPiecesShaking) {
+          if (s.entity && s.entity.mesh && s.entity.mesh.visible) {
+            const shake = Math.sin((elapsed - s.startTime) * 75) * 0.007;
+            s.entity.mesh.position.x = s.origX + shake;
+          }
+        }
+      }
+
+      // Shattered fragments physics
+      for (let i = 0; i < this.shatteredFragments.length; i++) {
+        const f = this.shatteredFragments[i];
+        if (f.isResting) continue;
+
+        f.vel.y -= 9.8 * delta; // Gravity
+        f.mesh.position.addScaledVector(f.vel, delta);
+        f.mesh.rotation.x += f.rotVel.x * delta;
+        f.mesh.rotation.y += f.rotVel.y * delta;
+        f.mesh.rotation.z += f.rotVel.z * delta;
+
+        // Bounce on altar floor
+        if (f.mesh.position.y <= ALTAR_HEIGHT + 0.015) {
+          f.mesh.position.y = ALTAR_HEIGHT + 0.015;
+          if (Math.abs(f.vel.y) > 0.35 && f.bounces < 2) {
+            f.bounces++;
+            f.vel.y = -f.vel.y * 0.32;
+            f.vel.x *= 0.6;
+            f.vel.z *= 0.6;
+            f.rotVel.multiplyScalar(0.5);
+          } else {
+            f.isResting = true;
+            f.vel.set(0, 0, 0);
+            f.rotVel.set(0, 0, 0);
+          }
+        }
+      }
+
+      // Dust puffs
+      for (let i = this.dustParticles.length - 1; i >= 0; i--) {
+        const d = this.dustParticles[i];
+        d.life -= delta;
+        d.mesh.position.addScaledVector(d.vel, delta);
+        d.mesh.scale.multiplyScalar(1.0 + delta * 1.8);
+        if (d.mesh.material) {
+          d.mesh.material.opacity = Math.max(0, 0.4 * (d.life / d.maxLife));
+        }
+        if (d.life <= 0) {
+          this.scene.remove(d.mesh);
+          this.dustParticles.splice(i, 1);
+        }
+      }
+
       // Flash light decay
       if (this.impactFlash.intensity > 0) {
         this.impactFlash.intensity = Math.max(0, this.impactFlash.intensity - delta * 20);
@@ -1391,6 +1902,7 @@ export class WizardChessScene {
   }
 
   destroy() {
+    this.clearEndGameEffects();
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
     }
