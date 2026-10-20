@@ -939,52 +939,7 @@ body.cinematic-ui-hidden .mobile-only-restore-ui {
   transform: rotate(30deg) translateY(1px);
 }
 
-/* Bottom Right Profile Badge */
-.gothic-bottom-right-profile {
-  position: absolute;
-  bottom: 24px;
-  right: 28px;
-  background: linear-gradient(180deg, rgba(28, 25, 32, 0.88) 0%, rgba(18, 16, 21, 0.94) 100%);
-  border: 1px solid rgba(145, 128, 98, 0.32);
-  border-radius: 4px;
-  padding: 8px 16px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #ebe4d6;
-  font-family: 'Cinzel', serif;
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  cursor: pointer;
-  pointer-events: auto;
-  transition: all 0.2s ease;
-  z-index: 105;
-}
 
-.gothic-bottom-right-profile:hover {
-  border-color: rgba(195, 168, 115, 0.55);
-  color: #f7f3ec;
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.7), 0 0 12px rgba(195, 168, 115, 0.15);
-}
-
-.gothic-bottom-right-profile:active {
-  transform: translateY(1px);
-}
-
-.profile-chevron {
-  color: rgba(180, 165, 140, 0.6);
-  margin-left: 2px;
-  transition: color 0.2s ease;
-}
-
-.gothic-bottom-right-profile:hover .profile-chevron {
-  color: #c2a466;
-}
 
 /* Left-Aligned Floating Menu Column */
 .gothic-menu-column {
@@ -1536,34 +1491,67 @@ body.cinematic-ui-hidden .mobile-only-restore-ui {
   color: #fff;
 }
 
+.settings-modal-card {
+  max-width: 680px;
+  max-height: 85vh;
+}
+
+.settings-modal-card .modal-content {
+  overflow-y: auto;
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .settings-row:last-child {
   border-bottom: none;
 }
 
+.settings-info {
+  flex: 1;
+  min-width: 180px;
+}
+
 .settings-label {
-  font-size: 0.92rem;
+  font-size: 0.94rem;
   font-weight: 600;
-  color: #fff;
+  color: #f5eedc;
   margin-bottom: 3px;
+  letter-spacing: 0.02em;
 }
 
 .settings-desc {
   font-size: 0.78rem;
-  color: var(--text-muted);
+  color: rgba(203, 213, 225, 0.65);
+  line-height: 1.35;
 }
 
 .cam-quick-group {
   display: flex;
+  align-items: center;
   gap: 6px;
+}
+
+.cam-quick-group.wrap-group {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 380px;
+}
+
+.cam-quick-group .hud-btn {
+  font-size: 0.78rem;
+  padding: 7px 11px;
+  white-space: nowrap;
 }
 
 .modal-footer {
@@ -1576,5 +1564,19 @@ body.cinematic-ui-hidden .mobile-only-restore-ui {
 .modal-footer .home-btn-primary {
   width: auto;
   padding: 10px 28px;
+}
+
+@media (max-width: 640px) {
+  .settings-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .cam-quick-group.wrap-group {
+    justify-content: flex-start;
+    width: 100%;
+    max-width: 100%;
+  }
 }
 

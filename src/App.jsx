@@ -49,6 +49,8 @@ export default function App() {
   const [capturedBlack, setCapturedBlack] = useState(0);
 
   const [activeCam, setActiveCam] = useState('player');
+  const [homeCamMode, setHomeCamMode] = useState('cinematic'); // 'cinematic', 'orbit', 'wide', 'front', 'top'
+  const [camDriftEnabled, setCamDriftEnabled] = useState(true);
   const [uiHidden, setUiHidden] = useState(false);
   const [soundMuted, setSoundMuted] = useState(false);
   const [cuteSoldiers, setCuteSoldiers] = useState(false);
@@ -134,8 +136,10 @@ export default function App() {
       sceneRef.current.setGameMode(mode);
       sceneRef.current.setAiDifficulty(diff);
       sceneRef.current.setPlayerColor(color);
+      sceneRef.current.inGameCamMode = activeCam;
       sceneRef.current.resetGame();
       sceneRef.current.setHomeMenuMode(false);
+      sceneRef.current.setCameraView(activeCam);
     }
 
     setGameStarted(true);
@@ -158,6 +162,7 @@ export default function App() {
     if (sceneRef.current) {
       sceneRef.current.clearEndGameEffects();
       sceneRef.current.setHomeMenuMode(true);
+      sceneRef.current.setHomeCameraMode(homeCamMode);
     }
     setIsHomeMenu(true);
   };
@@ -165,7 +170,22 @@ export default function App() {
   const handleCameraChange = (type) => {
     soundManager.playMenuClick();
     setActiveCam(type);
-    sceneRef.current?.setCameraView(type);
+    if (!isHomeMenu) {
+      sceneRef.current?.setCameraView(type);
+    }
+  };
+
+  const handleHomeCameraChange = (mode) => {
+    soundManager.playMenuClick();
+    setHomeCamMode(mode);
+    sceneRef.current?.setHomeCameraMode(mode);
+  };
+
+  const handleToggleCamDrift = () => {
+    soundManager.playMenuClick();
+    const next = !camDriftEnabled;
+    setCamDriftEnabled(next);
+    sceneRef.current?.setCamDriftEnabled(next);
   };
 
   const handlePlayerColorToggle = () => {
@@ -387,13 +407,6 @@ export default function App() {
           >
             <SettingsIcon size={19} />
           </button>
-
-          {/* Bottom Right Profile Badge */}
-          <div className="gothic-bottom-right-profile">
-            <User size={15} />
-            <span>Khách</span>
-            <ChevronRight size={14} className="profile-chevron" />
-          </div>
 
           {/* Left-Aligned Floating Menu Column */}
           <div className="gothic-menu-column">
@@ -685,11 +698,11 @@ export default function App() {
       {/* ================= SETTINGS MODAL ================= */}
       {showSettingsModal && (
         <div className="app-modal-backdrop" onClick={() => setShowSettingsModal(false)}>
-          <div className="app-modal-card" onClick={(e) => e.stopPropagation()}>
+          <div className="app-modal-card settings-modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-title-wrap">
                 <SettingsIcon size={20} color="#d4ad37" />
-                <h3>Cài Đặt Trò Chơi</h3>
+                <h3>Tùy Chỉnh Trò Chơi</h3>
               </div>
               <button
                 type="button"
@@ -701,8 +714,127 @@ export default function App() {
             </div>
 
             <div className="modal-content">
+              {/* Home Screen Camera Mode */}
               <div className="settings-row">
-                <div>
+                <div className="settings-info">
+                  <div className="settings-label">Góc Nhìn Màn Chờ (Menu)</div>
+                  <div className="settings-desc">Góc camera tại sảnh chờ bàn cờ (chuyển xem ngay lập tức)</div>
+                </div>
+                <div className="cam-quick-group wrap-group">
+                  <button
+                    type="button"
+                    className={`hud-btn ${homeCamMode === 'cinematic' ? 'active' : ''}`}
+                    onClick={() => handleHomeCameraChange('cinematic')}
+                    title="Góc chéo điện ảnh nghệ thuật"
+                  >
+                    🎬 Điện Ảnh
+                  </button>
+                  <button
+                    type="button"
+                    className={`hud-btn ${homeCamMode === 'orbit' ? 'active' : ''}`}
+                    onClick={() => handleHomeCameraChange('orbit')}
+                    title="Xoay tròn 360 độ quanh bàn cờ"
+                  >
+                    🔄 Xoay 360°
+                  </button>
+                  <button
+                    type="button"
+                    className={`hud-btn ${homeCamMode === 'wide' ? 'active' : ''}`}
+                    onClick={() => handleHomeCameraChange('wide')}
+                    title="Toàn cảnh thánh đường tráng lệ"
+                  >
+                    🏰 Toàn Cảnh
+                  </button>
+                  <button
+                    type="button"
+                    className={`hud-btn ${homeCamMode === 'front' ? 'active' : ''}`}
+                    onClick={() => handleHomeCameraChange('front')}
+                    title="Nhìn trực diện đối đầu 2 quân đoàn"
+                  >
+                    ⚔️ Trực Diện
+                  </button>
+                  <button
+                    type="button"
+                    className={`hud-btn ${homeCamMode === 'top' ? 'active' : ''}`}
+                    onClick={() => handleHomeCameraChange('top')}
+                    title="Nhìn thẳng từ trên cao xuống tế đài"
+                  >
+                    📐 Trên Cao
+                  </button>
+                </div>
+              </div>
+
+              {/* Camera Breathing Drift Toggle */}
+              <div className="settings-row">
+                <div className="settings-info">
+                  <div className="settings-label">Chuyển Động Trôi Màn Chờ</div>
+                  <div className="settings-desc">Camera nhẹ nhàng lắc lư và thở nhẹ như góc máy điện ảnh</div>
+                </div>
+                <button
+                  type="button"
+                  className={`hud-btn ${camDriftEnabled ? 'active' : ''}`}
+                  onClick={handleToggleCamDrift}
+                >
+                  {camDriftEnabled ? '✨ Đang Bật' : '⏸ Đang Tắt'}
+                </button>
+              </div>
+
+              {/* In-Game Default Camera */}
+              <div className="settings-row">
+                <div className="settings-info">
+                  <div className="settings-label">Góc Camera Trận Đấu Mặc Định</div>
+                  <div className="settings-desc">Góc máy quan sát bàn cờ khi bước vào trận đấu</div>
+                </div>
+                <div className="cam-quick-group">
+                  <button
+                    type="button"
+                    className={`hud-btn ${activeCam === 'player' ? 'active' : ''}`}
+                    onClick={() => handleCameraChange('player')}
+                  >
+                    👤 Người Chơi
+                  </button>
+                  <button
+                    type="button"
+                    className={`hud-btn ${activeCam === 'top' ? 'active' : ''}`}
+                    onClick={() => handleCameraChange('top')}
+                  >
+                    🦅 Trên Cao
+                  </button>
+                  <button
+                    type="button"
+                    className={`hud-btn ${activeCam === 'side' ? 'active' : ''}`}
+                    onClick={() => handleCameraChange('side')}
+                  >
+                    📐 Nghiêng
+                  </button>
+                  <button
+                    type="button"
+                    className={`hud-btn ${activeCam === 'wide' ? 'active' : ''}`}
+                    onClick={() => handleCameraChange('wide')}
+                  >
+                    🏛️ Rộng
+                  </button>
+                </div>
+              </div>
+
+              {/* Soldier Piece Style */}
+              <div className="settings-row">
+                <div className="settings-info">
+                  <div className="settings-label">Phong Cách Quân Cờ</div>
+                  <div className="settings-desc">Chuyển đổi giữa tượng Gothic cổ điển và quân Chibi đáng yêu</div>
+                </div>
+                <button
+                  type="button"
+                  className={`hud-btn ${cuteSoldiers ? 'active' : ''}`}
+                  onClick={handleToggleSoldierStyle}
+                >
+                  {cuteSoldiers ? '✨ Chibi Đáng Yêu' : '🗿 Tượng Đá Gothic'}
+                </button>
+              </div>
+
+              {/* Sound Effects */}
+              <div className="settings-row">
+                <div className="settings-info">
                   <div className="settings-label">Âm Thanh Hiệu Ứng (SFX)</div>
                   <div className="settings-desc">Âm thanh di chuyển, va chạm vật lý, tiếng chiêu thức</div>
                 </div>
@@ -716,46 +848,45 @@ export default function App() {
                 </button>
               </div>
 
+              {/* AI Difficulty */}
               <div className="settings-row">
-                <div>
-                  <div className="settings-label">Phong Cách Quân Cờ</div>
-                  <div className="settings-desc">Chuyển đổi giữa tượng Gothic cổ điển và quân Chibi đáng yêu</div>
-                </div>
-                <button
-                  type="button"
-                  className={`hud-btn ${cuteSoldiers ? 'active' : ''}`}
-                  onClick={handleToggleSoldierStyle}
-                >
-                  {cuteSoldiers ? '✨ Chibi Đáng Yêu' : '🗿 Tượng Đá Gothic'}
-                </button>
-              </div>
-
-              <div className="settings-row">
-                <div>
-                  <div className="settings-label">Góc Camera Mặc Định</div>
-                  <div className="settings-desc">Chọn góc máy ưa thích để quan sát trận đấu</div>
+                <div className="settings-info">
+                  <div className="settings-label">Độ Khó AI Đối Thủ</div>
+                  <div className="settings-desc">Mức độ tính toán nước đi của pháp sư AI khi chơi với máy</div>
                 </div>
                 <div className="cam-quick-group">
                   <button
                     type="button"
-                    className={`hud-btn ${activeCam === 'player' ? 'active' : ''}`}
-                    onClick={() => handleCameraChange('player')}
+                    className={`hud-btn ${aiDifficulty === 'easy' ? 'active' : ''}`}
+                    onClick={() => {
+                      soundManager.playMenuClick();
+                      setAiDifficulty('easy');
+                      sceneRef.current?.setAiDifficulty('easy');
+                    }}
                   >
-                    Người Chơi
+                    Tập Sự
                   </button>
                   <button
                     type="button"
-                    className={`hud-btn ${activeCam === 'top' ? 'active' : ''}`}
-                    onClick={() => handleCameraChange('top')}
+                    className={`hud-btn ${aiDifficulty === 'medium' ? 'active' : ''}`}
+                    onClick={() => {
+                      soundManager.playMenuClick();
+                      setAiDifficulty('medium');
+                      sceneRef.current?.setAiDifficulty('medium');
+                    }}
                   >
-                    Trên Cao
+                    Pháp Sư
                   </button>
                   <button
                     type="button"
-                    className={`hud-btn ${activeCam === 'side' ? 'active' : ''}`}
-                    onClick={() => handleCameraChange('side')}
+                    className={`hud-btn ${aiDifficulty === 'hard' ? 'active' : ''}`}
+                    onClick={() => {
+                      soundManager.playMenuClick();
+                      setAiDifficulty('hard');
+                      sceneRef.current?.setAiDifficulty('hard');
+                    }}
                   >
-                    Nghiêng
+                    Đại Pháp Sư
                   </button>
                 </div>
               </div>

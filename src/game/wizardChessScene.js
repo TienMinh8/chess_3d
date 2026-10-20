@@ -52,6 +52,14 @@ export class WizardChessScene {
     this.gameMode = 'ai'; // 'ai' or 'pass-play'
     this.aiDifficulty = 'medium'; // 'easy' (depth 1), 'medium' (depth 2), 'hard' (depth 3)
 
+    // Camera customization state
+    this.homeCamMode = 'cinematic'; // 'cinematic', 'orbit', 'wide', 'front', 'top'
+    this.camDriftEnabled = true;
+    this.userInteracting = false;
+    this.inGameCamMode = 'player';
+    this.homeBasePos = new THREE.Vector3(-1.85, 1.72, 2.12);
+    this.homeBaseTarget = new THREE.Vector3(0.28, 0.88, -0.15);
+
     this.currentTurn = 'w';
     this.playerColor = 'w';
     this.selectedSquare = null;
@@ -597,19 +605,83 @@ export class WizardChessScene {
 
   setHomeMenuMode(enabled) {
     this.isHomeMode = enabled;
-    this.controls.autoRotate = false;
     this.clearEndGameEffects();
     if (enabled) {
       this.clearSelection();
-      this.setCameraView('home');
+      this.setHomeCameraMode(this.homeCamMode || 'cinematic');
     } else {
-      this.setCameraView('player');
+      this.controls.autoRotate = false;
+      this.setCameraView(this.inGameCamMode || 'player');
     }
+  }
+
+  setHomeCameraMode(mode) {
+    this.homeCamMode = mode;
+    let targetPos, targetLookAt;
+
+    switch (mode) {
+      case 'orbit':
+        targetPos = new THREE.Vector3(0, 2.65, 3.85);
+        targetLookAt = new THREE.Vector3(0, 0.85, 0);
+        this.controls.autoRotate = true;
+        this.controls.autoRotateSpeed = 0.6;
+        break;
+      case 'wide':
+        targetPos = new THREE.Vector3(0, 2.65, 5.85);
+        targetLookAt = new THREE.Vector3(0, 1.4, -0.8);
+        this.controls.autoRotate = false;
+        break;
+      case 'front':
+        targetPos = new THREE.Vector3(0, 2.22, 2.75);
+        targetLookAt = new THREE.Vector3(0, 0.85, -0.15);
+        this.controls.autoRotate = false;
+        break;
+      case 'top':
+        targetPos = new THREE.Vector3(0, 5.8, 2.2);
+        targetLookAt = new THREE.Vector3(0, 0.8, 0);
+        this.controls.autoRotate = false;
+        break;
+      case 'cinematic':
+      default:
+        targetPos = new THREE.Vector3(-1.85, 1.72, 2.12);
+        targetLookAt = new THREE.Vector3(0.28, 0.88, -0.15);
+        this.controls.autoRotate = false;
+        break;
+    }
+
+    this.homeBasePos.copy(targetPos);
+    this.homeBaseTarget.copy(targetLookAt);
+
+    this.activeCamTween = {
+      startPos: this.camera.position.clone(),
+      endPos: targetPos,
+      startTarget: this.controls.target.clone(),
+      endTarget: targetLookAt,
+      elapsed: 0,
+      duration: 0.85
+    };
+  }
+
+  setCamDriftEnabled(enabled) {
+    this.camDriftEnabled = enabled;
   }
 
   initEventHandlers() {
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
+
+    // Listen to user orbit drag interactions
+    this.userInteracting = false;
+    this.controls.addEventListener('start', () => {
+      this.userInteracting = true;
+    });
+    this.controls.addEventListener('end', () => {
+      this.userInteracting = false;
+      if (this.isHomeMode && this.homeCamMode !== 'orbit') {
+        this.homeBasePos.copy(this.camera.position);
+        this.homeBaseTarget.copy(this.controls.target);
+      }
+    });
 
     this.onPointerDown = (e) => {
       if (this.isBusy || this.gameOver || this.isHomeMode) return;
@@ -1570,12 +1642,36 @@ export class WizardChessScene {
         targetLookAt = new THREE.Vector3(0, 1.95, sideSign * -2.5);
         break;
       case 'home':
-        // Dramatic diagonal angle matching reference image concept art
+      case 'cinematic':
         targetPos = new THREE.Vector3(-1.85, 1.72, 2.12);
         targetLookAt = new THREE.Vector3(0.28, 0.88, -0.15);
         break;
+      case 'orbit':
+        targetPos = new THREE.Vector3(0, 2.65, 3.85);
+        targetLookAt = new THREE.Vector3(0, 0.85, 0);
+        break;
       default:
         return;
+    }
+
+    if (this.isHomeMode) {
+      this.homeBasePos.copy(targetPos);
+      this.homeBaseTarget.copy(targetLookAt);
+      if (type === 'orbit') {
+        this.homeCamMode = 'orbit';
+        this.controls.autoRotate = true;
+        this.controls.autoRotateSpeed = 0.6;
+      } else {
+        this.controls.autoRotate = false;
+        if (type === 'home' || type === 'cinematic') this.homeCamMode = 'cinematic';
+        else if (type === 'wide') this.homeCamMode = 'wide';
+        else if (type === 'player') this.homeCamMode = 'front';
+        else if (type === 'top') this.homeCamMode = 'top';
+        else this.homeCamMode = type;
+      }
+    } else {
+      this.controls.autoRotate = false;
+      this.inGameCamMode = type;
     }
 
     this.activeCamTween = {
@@ -1618,7 +1714,7 @@ export class WizardChessScene {
 
     this.clearSelection();
     this.spawnAllPieces();
-    this.setCameraView('player');
+    this.setCameraView(this.inGameCamMode || 'player');
 
     if (this.callbacks.onStateChange) {
       this.callbacks.onStateChange({
@@ -1636,7 +1732,7 @@ export class WizardChessScene {
 
   setPlayerColor(color) {
     this.playerColor = color;
-    this.setCameraView('player');
+    this.setCameraView(this.inGameCamMode || 'player');
     if (this.currentTurn !== this.playerColor && !this.gameOver) {
       setTimeout(() => this.triggerAIMove(), 600);
     }
@@ -1878,13 +1974,29 @@ export class WizardChessScene {
         }
       }
 
-      // Home screen cinematic gentle breathing camera drift
-      if (this.isHomeMode && !this.activeCamTween) {
-        const driftX = Math.sin(elapsed * 0.35) * 0.08;
-        const driftY = Math.sin(elapsed * 0.48) * 0.04;
-        const driftZ = Math.cos(elapsed * 0.28) * 0.06;
-        this.camera.position.set(-1.85 + driftX, 1.72 + driftY, 2.12 + driftZ);
-        this.controls.target.set(0.28, 0.88 + driftY * 0.35, -0.15);
+      // Home screen cinematic camera motion
+      if (this.isHomeMode && !this.activeCamTween && !this.userInteracting) {
+        if (this.homeCamMode === 'orbit') {
+          this.controls.autoRotate = true;
+          this.controls.autoRotateSpeed = 0.6;
+        } else {
+          this.controls.autoRotate = false;
+          if (this.camDriftEnabled) {
+            const driftX = Math.sin(elapsed * 0.35) * 0.06;
+            const driftY = Math.sin(elapsed * 0.48) * 0.03;
+            const driftZ = Math.cos(elapsed * 0.28) * 0.05;
+            this.camera.position.set(
+              this.homeBasePos.x + driftX,
+              this.homeBasePos.y + driftY,
+              this.homeBasePos.z + driftZ
+            );
+            this.controls.target.set(
+              this.homeBaseTarget.x,
+              this.homeBaseTarget.y + driftY * 0.25,
+              this.homeBaseTarget.z
+            );
+          }
+        }
       }
 
       // Camera shake
